@@ -1,0 +1,68 @@
+#version: "3.9"
+
+services:
+#  gitea:
+#    image: gitea/gitea:latest
+#    container_name: gitea
+#    ports:
+#      - "3000:3000"
+#      - "222:22"
+#    volumes:
+#      - gitea_data:/data
+#    environment:
+#      - GITEA__security__INSTALL_LOCK=true
+#      - GITEA__server__ROOT_URL=http://localhost:3000/
+#    networks:
+#      - dev
+
+  mock-jira:
+    build: ./mock-jira
+    container_name: mock-jira
+    ports:
+      - "5000:5000"
+    networks:
+      - dev
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+    container_name: ollama
+    entrypoint: [ "sh", "-c" ]
+    command: "./start-with-model.sh"
+    ports:
+      - "21434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./start-with-model.sh:/start-with-model.sh
+    networks:
+      - dev
+    tty: true
+    healthcheck:
+      test: "./model-running.sh"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  pr-checker:
+    build: ./pr-checker
+    container_name: pr-checker
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      mock-jira:
+        condition: service_started
+    networks:
+      - dev
+
+volumes:
+#  gitea_data:
+  ollama_data:
+
+networks:
+  dev:
+    driver: bridge
