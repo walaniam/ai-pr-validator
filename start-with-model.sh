@@ -1,5 +1,3 @@
-#!/bin/bash
-
 echo "Starting Ollama server..."
 ollama serve &  # Run in background
 

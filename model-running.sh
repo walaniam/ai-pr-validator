@@ -1,5 +1,3 @@
-#!/bin/bash
-
 model=$OLLAMA_MODEL
 count=$(ollama ls |grep "$model" |wc -l)
 echo "Running models count: $count"
