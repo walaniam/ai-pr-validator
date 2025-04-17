@@ -1,7 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 
 echo "Starting Ollama server..."
 ollama serve &  # Run in background
+
+echo "Waiting 10s before proceed"
 sleep 10         # Give it time to start
 
 model=$OLLAMA_MODEL

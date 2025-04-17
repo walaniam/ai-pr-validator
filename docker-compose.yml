@@ -1,23 +1,8 @@
-#version: "3.9"
-
 services:
-#  gitea:
-#    image: gitea/gitea:latest
-#    container_name: gitea
-#    ports:
-#      - "3000:3000"
-#      - "222:22"
-#    volumes:
-#      - gitea_data:/data
-#    environment:
-#      - GITEA__security__INSTALL_LOCK=true
-#      - GITEA__server__ROOT_URL=http://localhost:3000/
-#    networks:
-#      - dev
 
-  mock-jira:
-    build: ./mock-jira
-    container_name: mock-jira
+  mock-apis:
+    build: mock-apis
+    container_name: mock-apis
     ports:
       - "5000:5000"
     networks:
@@ -35,13 +20,14 @@ services:
     volumes:
       - ollama_data:/root/.ollama
       - ./start-with-model.sh:/start-with-model.sh
+      - ./model-running.sh:/model-running.sh
     networks:
       - dev
     tty: true
     healthcheck:
-      test: "./model-running.sh"
+      test: ["CMD", "sh", "-c", "./model-running.sh"]
       interval: 15s
-      timeout: 10s
+      timeout: 5s
       retries: 10
       start_period: 15s
     restart: unless-stopped
@@ -49,18 +35,24 @@ services:
   pr-checker:
     build: ./pr-checker
     container_name: pr-checker
+    ports:
+      - "5050:5050"
     environment:
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - JIRA_API_TOKEN_EMAIL=${JIRA_API_TOKEN_EMAIL}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
+      - JIRA_ISSUE_ENDPOINT=${JIRA_ISSUE_ENDPOINT}
+      - GITHUB_ENDPOINT=${GITHUB_ENDPOINT}
     depends_on:
       ollama:
         condition: service_healthy
-      mock-jira:
+      mock-apis:
         condition: service_started
     networks:
       - dev
 
 volumes:
-#  gitea_data:
   ollama_data:
 
 networks:

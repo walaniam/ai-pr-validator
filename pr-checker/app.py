@@ -1,32 +1,48 @@
+import logging
+from flask import Flask, jsonify, request
 import requests
 import time
-import sys
 import os
+from requests.auth import HTTPBasicAuth
 
 # Wait for services to be up (simplified)
 time.sleep(5)
 
-JIRA_URL = "http://mock-jira:5000/rest/api/3/issue/PROJ-123"
+app = Flask(__name__)
+# Set up logging
+app.logger.setLevel(logging.DEBUG)
+
+# Env variables
+# Jira
+JIRA_ISSUE_ENDPOINT = os.environ['JIRA_ISSUE_ENDPOINT']
+JIRA_API_TOKEN_EMAIL = os.environ['JIRA_API_TOKEN_EMAIL']
+JIRA_API_TOKEN = os.environ['JIRA_API_TOKEN']
+# Github
+GITHUB_ENDPOINT = os.environ['GITHUB_ENDPOINT']
+GITHUB_API_TOKEN = os.environ['GITHUB_API_TOKEN']
+
 OLLAMA_URL = "http://ollama:11434/api/chat"
 
-# MODEL = os.environ['OLLAMA_MODEL']
-
+# Check with chat if PR matches content of jira.
 def check_pr_against_ticket(jira_summary, jira_criteria, pr_summary, code_diff):
     prompt = f"""
-JIRA Ticket:
+Below are two sections: JIRA Ticket (requirements) and Pull Request (implementation).
+Please check whether the pull request meet jira requirements? Add reason for the answer
+but don't propose solution.
+    
+JIRA Ticket (requirements):
 Summary: {jira_summary}
 Acceptance Criteria: {jira_criteria}
 
-Pull Request:
+Pull Request (implementation):
 Summary: {pr_summary}
 Code Diff:
 {code_diff[:3000]}
-
-Does the PR meet the Jira requirements?
 """
 
     model = os.environ['OLLAMA_MODEL']
-    sys.stdout.write("Using model: " + model + "\n")
+    app.logger.info("Using model: %s", model)
+    app.logger.debug("Prompt: %s", prompt)
 
     response = requests.post(OLLAMA_URL, json={
         "model": model,
@@ -34,27 +50,91 @@ Does the PR meet the Jira requirements?
         "stream": False
     })
 
-    sys.stdout.write("Chat status: " + str(response.status_code) + "\n")
+    app.logger.info("LLM status: %d", response.status_code)
 
     result = response.json()
     return result["message"]["content"]
 
-def main():
-    # Fake PR summary + diff
-    pr_summary = "Added login form with username and password input fields."
-    code_diff = "diff --git a/LoginPage.js b/LoginPage.js\n+<form><input name='username' /><input name='password' /></form>"
+# Fetch jira ticket description
+def fetch_jira_issue(issue_key):
+    url = JIRA_ISSUE_ENDPOINT + issue_key
+    app.logger.info("Calling: %s", url)
+    auth = HTTPBasicAuth(JIRA_API_TOKEN_EMAIL, JIRA_API_TOKEN)
+    headers = {
+        "Accept": "application/json"
+    }
+    response = requests.request(
+        "GET",
+        url,
+        headers=headers,
+        auth=auth
+    )
+    result = response.json()
+    app.logger.info("Status: %d", response.status_code)
+    return {
+        "summary": result["fields"]["summary"],
+        "description": result["fields"]["description"]
+    }
 
-    sys.stdout.write("Calling: " + JIRA_URL + "\n")
-    jira = requests.get(JIRA_URL).json()
+def fetch_pr_diff(pr_project_path):
+    url = GITHUB_ENDPOINT + pr_project_path
+    app.logger.info("Calling: %s", url)
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "Authorization": f"Bearer {GITHUB_API_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    response = requests.request(
+        "GET",
+        url,
+        headers=headers
+    )
+    result = response.text
+    app.logger.info("Status: %d", response.status_code)
+    return result
 
-    result = check_pr_against_ticket(
-        jira["summary"],
-        jira["acceptance_criteria"],
+def fetch_pr_summary(pr_project_path):
+    url = GITHUB_ENDPOINT + pr_project_path
+    app.logger.info("Calling: %s", url)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {GITHUB_API_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    # app.logger.debug("Headers: %s", json.dumps(headers))
+    response = requests.request(
+        "GET",
+        url,
+        headers=headers
+    )
+    result = response.json()
+    app.logger.info("Status: %d", response.status_code)
+    return result["title"]
+
+@app.route('/api/check-pr')
+def get_check_pr():
+    jira = request.args.get('jira')
+    github = request.args.get('github')
+    app.logger.info("Checking [%s] against [%s]", github, jira)
+
+    pr_summary = fetch_pr_summary(github)
+    pr_diff = fetch_pr_diff(github)
+    jira_details = fetch_jira_issue(jira)
+
+    llm_response = check_pr_against_ticket(
+        jira_details["summary"],
+        jira_details["description"],
         pr_summary,
-        code_diff
+        pr_diff
     )
 
-    print("LLM Feedback:\n", result)
+    return jsonify({
+        "jira": jira,
+        "jira_summary": jira_details["summary"],
+        "pr_summary": pr_summary,
+        "pr": github,
+        "llm_response": llm_response
+    })
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5050, debug=True)

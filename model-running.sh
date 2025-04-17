@@ -1,6 +1,7 @@
-#!/bin/sh
+#!/bin/bash
+
 model=$OLLAMA_MODEL
-count=$(ollama ps |grep "$model" |wc -l)
+count=$(ollama ls |grep "$model" |wc -l)
 echo "Running models count: $count"
 
 if [ "$count" -ge 1 ]; then
