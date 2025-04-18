@@ -37,7 +37,7 @@ Acceptance Criteria: {jira_criteria}
 Pull Request (implementation):
 Summary: {pr_summary}
 Code Diff:
-{code_diff[:3000]}
+{code_diff[:10000]}
 """
 
     model = os.environ['OLLAMA_MODEL']
@@ -133,7 +133,8 @@ def get_check_pr():
         "jira_summary": jira_details["summary"],
         "pr_summary": pr_summary,
         "pr": github,
-        "llm_response": llm_response
+        "llm_response": llm_response,
+        "model": os.environ['OLLAMA_MODEL']
     })
 
 if __name__ == '__main__':
